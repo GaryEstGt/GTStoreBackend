@@ -2,11 +2,12 @@ var createError = require('http-errors');
 var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
 var logger = require('morgan');
 const {MongoClient} = require('mongodb');
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
-
+const port = 3000
 var app = express();
 
 // view engine setup
@@ -19,9 +20,31 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
+let producto = {
+  product_name:'',
+  product_type: '',
+  product_price:0.0,
+  product_desc:''
+ };
 
+let producto_encontrado;
+
+app.post('/crear', function (req, res) {
+  producto.product_name=req.body.name
+  producto.product_type=req.body.type
+  producto.product_price=req.body.price
+  producto.product_desc=req.body.desc
+  crearProducto(producto)
+  res.send("enviado")
+});
+
+app.get('/buscar', function (req, res) {
+    id=req.query.id || 0;
+    if(id!=''){
+      buscarProducto(id)
+      res.send(producto_encontrado)
+    }
+});
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
   next(createError(404));
@@ -38,11 +61,11 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
-async function main(){
-  /**
+/*async function main(){
+
    * Connection URI. Update <username>, <password>, and <your-cluster-url> to reflect your cluster.
    * See https://docs.mongodb.com/ecosystem/drivers/node/ for more details
-   */
+
   const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
 
 
@@ -60,9 +83,37 @@ async function main(){
   } finally {
       await client.close();
   }
+}*/
+async function crearProducto(Producto){
+  //string de conexión a base de datos
+  const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+  const client = new MongoClient(uri);
+  try {
+      await client.connect(); //se apertura la conexión
+      // función para crear registro en la base de datos
+      await  createListing(client,Producto);
+  } catch (e) {
+    //manejador de errores
+      console.error(e);
+  } finally {
+      await client.close(); //Se cierra la conexión
+  }
 }
-
-main().catch(console.error);
+async function buscarProducto(id){
+  //string de conexión a base de datos
+  const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+  const client = new MongoClient(uri);
+  try {
+      await client.connect(); //se apertura la conexión
+      // función para encontrar un registro en la base de datos
+      await  findOneListingById(client,id);
+  } catch (e) {
+    //manejador de errores
+      console.error(e);
+  } finally {
+      await client.close(); //Se cierra la conexión
+  }
+}
 
 async function listDatabases(client){
   databasesList = await client.db().admin().listDatabases();
@@ -81,9 +132,12 @@ async function findOneListingById(client, id) {
   if (result) {
       console.log(`Found a listing in the collection with the name '${id}':`);
       console.log(result);
+      producto_encontrado=result
   } else {
       console.log(`No listings found with the name '${id}'`);
   }
 }
-
+app.listen(port, () => {
+  console.log(`Laboratorio 1 listening at http://localhost:${port}`)
+})
 module.exports = app;
