@@ -21,16 +21,16 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 let producto = {
+  Cod_prod:'',
   product_name:'',
   product_type: '',
   product_price:0.0,
   product_desc:''
  };
 
-let producto_encontrado;
-
 app.post('/crear', function (req, res) {
   producto.product_name=req.body.name
+  producto.Cod_prod=req.body.cod
   producto.product_type=req.body.type
   producto.product_price=req.body.price
   producto.product_desc=req.body.desc
@@ -38,12 +38,17 @@ app.post('/crear', function (req, res) {
   res.send("enviado")
 });
 
-app.get('/buscar', function (req, res) {
+app.get('/buscar', async function (req, res) {
     id=req.query.id || 0;
     if(id!=''){
-      buscarProducto(id)
-      res.send(producto_encontrado)
+      const prod= await buscarProducto(id)
+      res.send(prod)
     }
+});
+
+app.get('/mostrar', async function (req, res) {
+    const prod= await mostrarTodos()
+    res.send(prod)
 });
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -61,29 +66,6 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
-/*async function main(){
-
-   * Connection URI. Update <username>, <password>, and <your-cluster-url> to reflect your cluster.
-   * See https://docs.mongodb.com/ecosystem/drivers/node/ for more details
-
-  const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
-
-
-  const client = new MongoClient(uri);
-
-  try {
-      // Connect to the MongoDB cluster
-      await client.connect();
-
-      // Make the appropriate DB calls
-      await  listDatabases(client);
-
-  } catch (e) {
-      console.error(e);
-  } finally {
-      await client.close();
-  }
-}*/
 async function crearProducto(Producto){
   //string de conexión a base de datos
   const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
@@ -91,12 +73,13 @@ async function crearProducto(Producto){
   try {
       await client.connect(); //se apertura la conexión
       // función para crear registro en la base de datos
-      await  createListing(client,Producto);
+      var res= await  createListing(client,Producto);
   } catch (e) {
     //manejador de errores
-      console.error(e);
+      res= console.error(e);
   } finally {
       await client.close(); //Se cierra la conexión
+      return res
   }
 }
 async function buscarProducto(id){
@@ -106,12 +89,29 @@ async function buscarProducto(id){
   try {
       await client.connect(); //se apertura la conexión
       // función para encontrar un registro en la base de datos
-      await  findOneListingById(client,id);
+     var resultado= await  findOneListingById(client,id);
   } catch (e) {
     //manejador de errores
-      console.error(e);
+      resultado = console.error(e);
   } finally {
       await client.close(); //Se cierra la conexión
+      return resultado
+  }
+}
+async function mostrarTodos(){
+  //string de conexión a base de datos
+  const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+  const client = new MongoClient(uri);
+  try {
+      await client.connect(); //se apertura la conexión
+      // función para encontrar un registro en la base de datos
+     var resultado= await findAll(client);
+  } catch (e) {
+    //manejador de errores
+      resultado = console.error(e);
+  } finally {
+      await client.close(); //Se cierra la conexión
+      return resultado
   }
 }
 
@@ -125,19 +125,32 @@ async function listDatabases(client){
 async function createListing(client, newListing){
   const result = await client.db("GT_Store_1").collection("Productos").insertOne(newListing);
   console.log(`New listing created with the following id: ${result.insertedId}`);
+  return result.insertedId
 }
 
 async function findOneListingById(client, id) {
-  const result = await client.db("GT_Store_1").collection("Productos").findOne({ _id: id });
+  const result = await client.db("GT_Store_1").collection("Productos").findOne({Cod_prod: id });
   if (result) {
       console.log(`Found a listing in the collection with the name '${id}':`);
       console.log(result);
-      producto_encontrado=result
+      return result
   } else {
-      console.log(`No listings found with the name '${id}'`);
+      console.log(`No listings found with the id '${id}'`);
   }
 }
+
+async function findAll(client) {
+  const result = await client.db("GT_Store_1").collection("Productos").find();
+  if (result) {
+     // console.log(`Found a listing in the collection with the name '${re}':`);
+      console.log(result);
+      return result
+  } else {
+      console.log('No listings found with the id');
+  }
+}
+
 app.listen(port, () => {
-  console.log(`Laboratorio 1 listening at http://localhost:${port}`)
+  console.log(`GT Store Backend listening at http://localhost:${port}`)
 })
 module.exports = app;
