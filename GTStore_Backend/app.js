@@ -73,7 +73,7 @@ app.delete('/eliminar', async function (req, res) {
   if(id!=''){
     const prod= await eliminarProducto(id)
     if(prod.deletedCount!='0'){
-      res.sendStatus(20o)
+      res.sendStatus(200)
     }else{
       res.sendStatus(404)
     }
