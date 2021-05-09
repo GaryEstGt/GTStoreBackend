@@ -5,16 +5,31 @@ var cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
 var logger = require('morgan');
 const {MongoClient} = require('mongodb');
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
 const { resolve } = require('url');
 var ObjectId = require('mongodb').ObjectId; 
 const port = 4200
 var app = express();
+var md5 =require("md5");
+const llave='ContraseñaWebToken'
+jwt = require('jsonwebtoken')
+const axios = require('axios');
+const redis = require('redis');
+
+app.use(function(req,res,next){
+  res.header('Access-Control-Allow-Origin','*');
+  res.header('Access-Control-Allow-Methods','*');
+  next();
+});
+
+const client = redis.createClient(6379);
+ 
+client.on("error", (error) => {
+ console.error(error);
+});
 
 // view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
+/*app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'jade');*/
 
 app.use(logger('dev'));
 app.use(express.json());
@@ -22,56 +37,50 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-let producto = {
-  Cod_prod:'',
-  product_name:'',
-  product_type: '',
-  product_price:0.0,
-  product_desc:''
- };
- let productoAct = {
-  Cod_prod:'',
-  product_name:'',
-  product_type: '',
-  product_price:0.0,
-  product_desc:''
- };
+
+
 
 app.post('/crear', async function (req, res) {
-  producto.product_name=req.body.name
-  producto.Cod_prod=req.body.cod
-  producto.product_type=req.body.type
-  producto.product_price=req.body.price
-  producto.product_desc=req.body.desc
-  const res_creado= await crearProducto(producto)
-  if(res_creado!='error'){
-    res.sendStatus(200)
-  }else{
-    res.sendStatus(404)
-  }
 
+  const res_creado= await crearProducto(producto = {
+    Cod_prod:req.body.cod,
+    product_foto:req.body.foto,
+    product_name:req.body.name,
+    product_type:req.body.type,
+    product_price:req.body.price,
+    product_desc:req.body.desc
+   })
+    res.sendStatus(200)
 });
 
 app.put('/actualizar', async function (req, res) {
-  productoAct.product_name=req.body.name
-  var id=req.body.id
-  productoAct.Cod_prod=req.body.cod
-  productoAct.product_type=req.body.type
-  productoAct.product_price=req.body.price
-  productoAct.product_desc=req.body.desc
-  const res_act=await actualizarProducto(id,productoAct)
-  if(res_act.matchedCount!=0){
+  const res_act=await actualizarProducto(req.body.id,producto={
+    Cod_prod:req.body.cod,
+    product_foto:req.body.foto,
+    product_name:req.body.name,
+    product_type:req.body.type,
+    product_price:req.body.price,
+    product_desc:req.body.desc
+  })
     res.sendStatus(201)
-  }else{
-    res.sendStatus(404)
-  } 
 });
 
 app.get('/buscar', async function (req, res) {
     id=req.query.id || '';
     if(id!=''){
-      const prod= await buscarProducto(id)
-        res.send(prod).status(200)
+      client.get(id, async (err, producto) => {
+        if (producto) {
+          console.log("tomando desde cache")
+          return res.status(200).send(producto)
+        } else { // When the data is not found in the cache then we can make request to the server
+ 
+          const prod= await buscarProducto(id)
+          // save the record in the cache for subsequent request
+          client.setex(id, 1440, JSON.stringify(prod));
+          // return the result to the client
+          return res.send(prod).status(200)
+      }
+    }); 
     }else{
       res.sendStatus(404)
     }
@@ -112,13 +121,78 @@ app.get('/mostrar', async function (req, res) {
   } 
 });
 
+app.post('/mostraradm', async function (req, res) {
+  const token = req.body.token
+  var respuesta="";
+  if (token) {
+    jwt.verify(token, 'ContraseñaWebToken', async (err, payload) => {      
+     if (err) {
+        return res.status(401).send(err);
+     } else {
+      const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+      const client = new MongoClient(uri);
+      try {
+          await client.connect(); //se apertura la conexión
+          // función para encontrar un registro en la base de datos
+          var resultado=await client.db("GT_Store_1")
+          .collection("Productos")
+          .find()
+          .toArray(async function(err, result) {
+            //console.log(result)
+            await client.close(); //Se cierra la conexión
+            return res.status(200).json(result)});
+      } catch (e) {
+        //manejador de errores
+        console.error(e);
+        await client.close();
+        return res.status(404)
+      }  
+     }
+   });
+ } else {
+    return res.status(401).send("no se envió token"); 
+   }
+  }
+);
+
+app.post('/autenticar', async function (req, res) {
+  user=req.body.usuario || '';
+  password=req.body.contrasena || '';
+  console.log(user)
+  if(user!='' && password!=''){
+    const usuario= await buscarUsuario(user)
+    if(usuario!=null){
+     if(user==usuario.usuario && md5(password)==usuario.contraseña) {
+      const payload = {
+        check:  true
+       };
+       const token = jwt.sign(payload, llave, {
+        expiresIn: 1440
+       });
+       console.log(token)
+      res.status(200).json({ mensaje: "Usuario correcto",token: token})
+     }
+     else{
+      res.status(200).json({ mensaje: "Usuario o contraseña incorrectos"})
+     }
+    }else{
+      res.status(200).json({ mensaje: "El usuario no existe"})
+    }
+  }else{
+    res.status(404).json({ mensaje: "Usuario o contraseña incorrectos"})
+  }
+});
+
+
 async function crearProducto(Producto){
   //string de conexión a base de datos
+  if(producto){
   const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
   const client = new MongoClient(uri);
   try {
       await client.connect(); //se apertura la conexión
       // función para crear registro en la base de datos
+
       var result = await client.db("GT_Store_1").collection("Productos").insertOne(Producto);
       console.log(`New listing created with the following id: ${result.insertedId}`);
   } catch (e) {
@@ -128,6 +202,8 @@ async function crearProducto(Producto){
   } finally {
       await client.close(); //Se cierra la conexión
       return result
+  }}else{
+    return null
   }
 }
 async function actualizarProducto(id,Producto){
@@ -184,6 +260,30 @@ async function buscarProducto(id){
           console.log(result);
       } else {
           console.log(`No listings found with the id '${id}'`);
+      }
+  } catch (e) {
+    //manejador de errores
+    result='error'
+    console.error(e);
+  } finally {
+      await client.close(); //Se cierra la conexión
+      return result
+  }
+}
+
+async function buscarUsuario(usuario){
+  //string de conexión a base de datos
+  const uri = "mongodb+srv://garydev:adminGTStore@cluster0.xmmh0.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+  const client = new MongoClient(uri);
+  try {
+      await client.connect(); //se apertura la conexión
+      // función para encontrar un registro en la base de datos
+      var result = await client.db("GT_Store_1").collection("Usuarios").findOne({usuario:usuario });
+      if (result) {
+          console.log(`Found a listing in the collection with the name '${usuario}':`);
+          console.log(result);
+      } else {
+          console.log(`No listings found with the id '${usuario}'`);
       }
   } catch (e) {
     //manejador de errores
